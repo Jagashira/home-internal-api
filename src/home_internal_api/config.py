@@ -38,8 +38,8 @@ class Settings:
             docker_timeout_seconds=float(os.getenv("HOME_INTERNAL_API_DOCKER_TIMEOUT", "3")),
             host_timeout_seconds=float(os.getenv("HOME_INTERNAL_API_HOST_TIMEOUT", "3")),
             monitored_services=_split_csv(
-                os.getenv("HOME_INTERNAL_API_MONITORED_SERVICES", "glances,home-platform,docker"),
-                default=["glances", "home-platform", "docker"],
+                os.getenv("HOME_INTERNAL_API_MONITORED_SERVICES", "glances,home-platform,home-internal-api,docker"),
+                default=["glances", "home-platform", "home-internal-api", "docker"],
             ),
             monitored_containers=_split_csv(
                 os.getenv(

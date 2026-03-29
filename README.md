@@ -39,7 +39,7 @@ The recommended v1 surface is:
 
 Initial monitored targets:
 
-- services: `glances`, `home-platform`, `docker`
+- services: `glances`, `home-platform`, `home-internal-api`, `docker`
 - containers: `news-aggregator`, `immich_server`, `immich_machine_learning`, `immich_postgres`, `immich_redis`
 
 ## Design Principles
@@ -114,6 +114,7 @@ Example:
   "services": {
     "glances": "active",
     "home-platform": "active",
+    "home-internal-api": "active",
     "docker": "active"
   },
   "containers": {
@@ -124,8 +125,8 @@ Example:
     "immich_redis": "running"
   },
   "summary": {
-    "servicesOk": 3,
-    "servicesTotal": 3,
+    "servicesOk": 4,
+    "servicesTotal": 4,
     "containersRunning": 5,
     "containersTotal": 5
   }
@@ -145,6 +146,7 @@ Example:
   "items": [
     { "name": "glances", "state": "active" },
     { "name": "home-platform", "state": "active" },
+    { "name": "home-internal-api", "state": "active" },
     { "name": "docker", "state": "active" }
   ]
 }
@@ -305,7 +307,7 @@ Characteristics:
 - checks `systemctl` service state
 - checks Docker container state
 - returns JSON suitable for Home Assistant polling
-- can be run behind `systemd`
+- intended to run behind host `systemd`
 
 ## Configuration
 
@@ -390,6 +392,8 @@ Important limitation:
 - `systemctl` status from inside a container depends on access to the host D-Bus socket
 - if the host uses a different socket path or tighter policy, service checks may return `unknown`
 - in that case Docker status and host metrics still continue to work independently
+
+Recommended deployment for real monitoring is still host `systemd`, because this API monitors the host itself.
 
 ## systemd + Docker Compose
 
