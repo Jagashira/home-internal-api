@@ -37,10 +37,10 @@ The recommended v1 surface is:
 - `GET /api/status/services`
 - `GET /api/status/containers`
 
-Initial monitored targets:
+Current production targets on `home-server`:
 
 - services: `glances`, `home-platform`, `home-internal-api`, `docker`
-- containers: `news-aggregator`, `immich_server`, `immich_machine_learning`, `immich_postgres`, `immich_redis`
+- containers: `home-platform-immich-server`, `home-platform-immich-redis`, `home-platform-immich-postgres`
 
 ## Design Principles
 
@@ -118,17 +118,15 @@ Example:
     "docker": "active"
   },
   "containers": {
-    "news-aggregator": "running",
-    "immich_server": "running",
-    "immich_machine_learning": "running",
-    "immich_postgres": "running",
-    "immich_redis": "running"
+    "home-platform-immich-server": "running",
+    "home-platform-immich-redis": "running",
+    "home-platform-immich-postgres": "running"
   },
   "summary": {
     "servicesOk": 4,
     "servicesTotal": 4,
-    "containersRunning": 5,
-    "containersTotal": 5
+    "containersRunning": 3,
+    "containersTotal": 3
   }
 }
 ```
@@ -163,9 +161,9 @@ Example:
   "ok": true,
   "updatedAt": "2026-03-30T02:10:00+09:00",
   "items": [
-    { "name": "news-aggregator", "state": "running" },
-    { "name": "immich_server", "state": "running" },
-    { "name": "immich_machine_learning", "state": "running" }
+    { "name": "home-platform-immich-server", "state": "running" },
+    { "name": "home-platform-immich-redis", "state": "running" },
+    { "name": "home-platform-immich-postgres", "state": "running" }
   ]
 }
 ```
@@ -254,32 +252,198 @@ Suggested future data:
 - SMART health, temperature, reallocated sectors
 - internal task queue depth
 
+## Production Deployment
+
+Current production deployment is:
+
+- host: `home-server`
+- app working copy: `/home/home-server/home-platform/apps/home-internal-api`
+- parent project: `/home/home-server/home-platform`
+- process manager: host `systemd`
+- listen address: `0.0.0.0:3010`
+- auth header: `x-internal-api-secret`
+
+This service is intentionally not run as a Docker container in production.
+It monitors the host itself, so host `systemd` is the simplest and most reliable setup.
+
+## Production Environment
+
+The production instance reads configuration from the parent project `.env`:
+
+- file: `/home/home-server/home-platform/.env`
+
+Required values:
+
+```env
+HOME_INTERNAL_API_HOSTNAME=home-server
+HOME_INTERNAL_API_BIND_HOST=0.0.0.0
+HOME_INTERNAL_API_PORT=3010
+HOME_INTERNAL_API_SECRET=<secret>
+HOME_INTERNAL_API_MONITORED_SERVICES=glances,home-platform,home-internal-api,docker
+HOME_INTERNAL_API_MONITORED_CONTAINERS=home-platform-immich-server,home-platform-immich-redis,home-platform-immich-postgres
+HOME_INTERNAL_API_DATA_DISK_PATH=/srv/home-data
+```
+
+Notes:
+
+- `HOME_INTERNAL_API_BIND_HOST=0.0.0.0` is required so Home Assistant can reach the API over LAN
+- `HOME_INTERNAL_API_HOSTNAME=home-server` controls `host.name` in the JSON response
+- monitored container names should match the real Docker container names, not image names
+
+## Production systemd Unit
+
+Production unit path:
+
+- `/etc/systemd/system/home-internal-api.service`
+
+Recommended unit:
+
+```ini
+[Unit]
+Description=home-internal-api
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/home-server/home-platform/apps/home-internal-api
+EnvironmentFile=/home/home-server/home-platform/.env
+ExecStart=/home/home-server/home-platform/apps/home-internal-api/.venv/bin/home-internal-api
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Production Setup Steps
+
+Use this when rebuilding from scratch on `home-server`.
+
+1. Place the repository under `/home/home-server/home-platform/apps/home-internal-api`.
+2. Ensure `/home/home-server/home-platform/.env` contains the `HOME_INTERNAL_API_*` values above.
+3. Create the virtual environment and install the package.
+4. Install the `systemd` unit.
+5. Enable and start the service.
+
+Commands:
+
+```bash
+cd /home/home-server/home-platform/apps/home-internal-api
+python3 -m venv .venv
+.venv/bin/pip install -e .
+
+sudo install -Dm644 deploy/systemd/home-internal-api.service /etc/systemd/system/home-internal-api.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now home-internal-api.service
+```
+
+If the checked-in unit uses a different base path, edit `/etc/systemd/system/home-internal-api.service` to match the real host path before enabling it.
+
+## Verification
+
+Check the service:
+
+```bash
+sudo systemctl status home-internal-api.service --no-pager
+sudo journalctl -u home-internal-api.service -f
+sudo lsof -nP -iTCP:3010 -sTCP:LISTEN
+```
+
+Expected listener:
+
+- `*:3010` or `0.0.0.0:3010`
+
+Check the API locally:
+
+```bash
+curl -s -H 'x-internal-api-secret: <secret>' http://127.0.0.1:3010/api/status/health
+curl -s -H 'x-internal-api-secret: <secret>' http://127.0.0.1:3010/api/status/summary | jq
+```
+
+Check the API over LAN:
+
+```bash
+curl -s -H 'x-internal-api-secret: <secret>' http://192.168.11.12:3010/api/status/summary | jq
+```
+
+Expected summary shape in production:
+
+```json
+{
+  "ok": true,
+  "host": {
+    "name": "home-server"
+  },
+  "services": {
+    "glances": "active",
+    "home-platform": "active",
+    "home-internal-api": "active",
+    "docker": "active"
+  },
+  "containers": {
+    "home-platform-immich-server": "running",
+    "home-platform-immich-redis": "running",
+    "home-platform-immich-postgres": "running"
+  },
+  "summary": {
+    "servicesOk": 4,
+    "servicesTotal": 4,
+    "containersRunning": 3,
+    "containersTotal": 3
+  }
+}
+```
+
 ## Home Assistant Example
 
 ```yaml
 rest:
   - resource: "http://192.168.11.12:3010/api/status/summary"
     scan_interval: 60
+    timeout: 30
     headers:
       x-internal-api-secret: !secret home_internal_api_secret
     sensor:
       - name: "Internal Services OK"
         value_template: "{{ value_json.summary.servicesOk }}"
+      - name: "Internal Services Total"
+        value_template: "{{ value_json.summary.servicesTotal }}"
       - name: "Internal Containers Running"
         value_template: "{{ value_json.summary.containersRunning }}"
+      - name: "Internal Containers Total"
+        value_template: "{{ value_json.summary.containersTotal }}"
       - name: "Glances State"
         value_template: "{{ value_json.services.glances }}"
       - name: "Home Platform State"
         value_template: "{{ value_json.services['home-platform'] }}"
-      - name: "News Aggregator State"
-        value_template: "{{ value_json.containers['news-aggregator'] }}"
+      - name: "Home Internal API State"
+        value_template: "{{ value_json.services['home-internal-api'] }}"
+      - name: "Docker State"
+        value_template: "{{ value_json.services.docker }}"
+      - name: "Immich Server State"
+        value_template: "{{ value_json.containers['home-platform-immich-server'] }}"
+      - name: "Immich Redis State"
+        value_template: "{{ value_json.containers['home-platform-immich-redis'] }}"
+      - name: "Immich Postgres State"
+        value_template: "{{ value_json.containers['home-platform-immich-postgres'] }}"
 
 template:
   - binary_sensor:
       - name: "Glances Healthy"
-        state: "{{ states('sensor.glances_state') == 'active' }}"
-      - name: "News Aggregator Healthy"
-        state: "{{ states('sensor.news_aggregator_state') == 'running' }}"
+        state: "{{ is_state('sensor.glances_state', 'active') }}"
+      - name: "Home Platform Healthy"
+        state: "{{ is_state('sensor.home_platform_state', 'active') }}"
+      - name: "Home Internal API Healthy"
+        state: "{{ is_state('sensor.home_internal_api_state', 'active') }}"
+      - name: "Docker Healthy"
+        state: "{{ is_state('sensor.docker_state', 'active') }}"
+      - name: "Immich Server Healthy"
+        state: "{{ is_state('sensor.immich_server_state', 'running') }}"
+      - name: "Immich Redis Healthy"
+        state: "{{ is_state('sensor.immich_redis_state', 'running') }}"
+      - name: "Immich Postgres Healthy"
+        state: "{{ is_state('sensor.immich_postgres_state', 'running') }}"
 ```
 
 ## Implementation Notes
@@ -394,67 +558,6 @@ Important limitation:
 - in that case Docker status and host metrics still continue to work independently
 
 Recommended deployment for real monitoring is still host `systemd`, because this API monitors the host itself.
-
-## systemd + Docker Compose
-
-`home-server` で常時起動したい場合は、Docker Compose を `systemd` で管理できます。
-
-Unit file:
-
-- [`deploy/systemd/home-internal-api.service`](/Users/jagashira/work/github.com/Jagashira/home-internal-api/deploy/systemd/home-internal-api.service)
-
-Recommended layout on `home-server`:
-
-- app directory: `/opt/home-internal-api`
-- working tree includes `docker-compose.yml`, `Dockerfile`, `Makefile`
-- copy [`.env.example`](/Users/jagashira/work/github.com/Jagashira/home-internal-api/.env.example) to `.env` and set the real secret before enable
-
-Install example:
-
-```bash
-sudo mkdir -p /opt
-sudo rsync -a ./ /opt/home-internal-api/
-cd /opt/home-internal-api
-cp .env.example .env
-$EDITOR .env
-sudo make install-systemd
-sudo systemctl enable --now home-internal-api.service
-```
-
-Useful commands:
-
-```bash
-sudo systemctl status home-internal-api.service
-sudo journalctl -u home-internal-api.service -f
-sudo systemctl restart home-internal-api.service
-```
-
-The service runs:
-
-- `make up` on start
-- `make down` on stop
-
-If your host uses a different `make` or `docker compose` path, update the unit file accordingly.
-
-## systemd Example
-
-```ini
-[Unit]
-Description=home-internal-api
-After=network-online.target docker.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/home-internal-api
-EnvironmentFile=/opt/home-internal-api/.env
-ExecStart=/opt/home-internal-api/.venv/bin/home-internal-api
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
 
 ## Tests
 
