@@ -1,0 +1,288 @@
+openapi: 3.1.0
+info:
+  title: home-internal-api
+  version: 1.0.0
+  description: >
+    LAN-only monitoring API for exposing home-server internal state to Home Assistant.
+servers:
+  - url: http://192.168.11.12:3010
+security:
+  - InternalApiSecret: []
+tags:
+  - name: status
+    description: Status and monitoring endpoints
+paths:
+  /api/status/health:
+    get:
+      tags: [status]
+      summary: Minimal liveness endpoint
+      operationId: getHealth
+      responses:
+        "200":
+          description: Health response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/status/summary:
+    get:
+      tags: [status]
+      summary: Aggregate monitoring endpoint for Home Assistant
+      operationId: getSummary
+      responses:
+        "200":
+          description: Summary response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/status/services:
+    get:
+      tags: [status]
+      summary: Detailed systemd service status
+      operationId: getServices
+      responses:
+        "200":
+          description: Service status response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/status/containers:
+    get:
+      tags: [status]
+      summary: Detailed Docker container status
+      operationId: getContainers
+      responses:
+        "200":
+          description: Container status response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContainersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/status/host:
+    get:
+      tags: [status]
+      summary: Basic host status for Home Assistant REST sensors
+      operationId: getHost
+      responses:
+        "200":
+          description: Host status response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    InternalApiSecret:
+      type: apiKey
+      in: header
+      name: x-internal-api-secret
+  responses:
+    Unauthorized:
+      description: Missing or invalid internal API secret
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            ok: false
+            error:
+              code: unauthorized
+              message: invalid internal api secret
+  schemas:
+    ServiceState:
+      type: string
+      enum: [active, inactive, failed, missing, unknown]
+    ContainerState:
+      type: string
+      enum: [running, stopped, missing, unknown]
+    Timestamp:
+      type: string
+      format: date-time
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, error]
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+    HostSummary:
+      type: object
+      additionalProperties: false
+      required: [name, updatedAt]
+      properties:
+        name:
+          type: string
+        updatedAt:
+          $ref: "#/components/schemas/Timestamp"
+    SummaryCounts:
+      type: object
+      additionalProperties: false
+      required:
+        - servicesOk
+        - servicesTotal
+        - containersRunning
+        - containersTotal
+      properties:
+        servicesOk:
+          type: integer
+          minimum: 0
+        servicesTotal:
+          type: integer
+          minimum: 0
+        containersRunning:
+          type: integer
+          minimum: 0
+        containersTotal:
+          type: integer
+          minimum: 0
+    SummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, host, services, containers, summary]
+      properties:
+        ok:
+          type: boolean
+        host:
+          $ref: "#/components/schemas/HostSummary"
+        services:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ServiceState"
+          examples:
+            - glances: active
+              home-platform: active
+              docker: active
+        containers:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ContainerState"
+          examples:
+            - news-aggregator: running
+              immich_server: running
+              immich_machine_learning: running
+              immich_postgres: running
+              immich_redis: running
+        summary:
+          $ref: "#/components/schemas/SummaryCounts"
+    ServiceItem:
+      type: object
+      additionalProperties: false
+      required: [name, state]
+      properties:
+        name:
+          type: string
+        state:
+          $ref: "#/components/schemas/ServiceState"
+    ContainerItem:
+      type: object
+      additionalProperties: false
+      required: [name, state]
+      properties:
+        name:
+          type: string
+        state:
+          $ref: "#/components/schemas/ContainerState"
+    ServicesResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, updatedAt, items]
+      properties:
+        ok:
+          type: boolean
+        updatedAt:
+          $ref: "#/components/schemas/Timestamp"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceItem"
+    ContainersResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, updatedAt, items]
+      properties:
+        ok:
+          type: boolean
+        updatedAt:
+          $ref: "#/components/schemas/Timestamp"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContainerItem"
+    HostDetails:
+      type: object
+      additionalProperties: false
+      required:
+        - uptimeSeconds
+        - load1
+        - load5
+        - load15
+        - memoryUsedPercent
+        - memoryFreeBytes
+        - rootDiskUsedPercent
+        - dataDiskUsedPercent
+        - dataDiskFreeBytes
+        - cpuTemperatureC
+      properties:
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+        load1:
+          type: number
+        load5:
+          type: number
+        load15:
+          type: number
+        memoryUsedPercent:
+          type: number
+        memoryFreeBytes:
+          type: integer
+          minimum: 0
+        rootDiskUsedPercent:
+          type: number
+        dataDiskUsedPercent:
+          type: number
+        dataDiskFreeBytes:
+          type: integer
+          minimum: 0
+        cpuTemperatureC:
+          type: number
+    HostResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, updatedAt, host]
+      properties:
+        ok:
+          type: boolean
+        updatedAt:
+          $ref: "#/components/schemas/Timestamp"
+        host:
+          $ref: "#/components/schemas/HostDetails"

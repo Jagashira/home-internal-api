@@ -1,0 +1,16 @@
+[Unit]
+Description=home-internal-api (Docker Compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/home-internal-api
+RemainAfterExit=yes
+ExecStart=/usr/bin/make up
+ExecStop=/usr/bin/make down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

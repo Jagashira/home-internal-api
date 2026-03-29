@@ -1,0 +1,26 @@
+services:
+  home-internal-api:
+    build: .
+    container_name: home-internal-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "3010:3010"
+    environment:
+      HOME_INTERNAL_API_BIND_HOST: 0.0.0.0
+      HOME_INTERNAL_API_PORT: 3010
+      HOME_INTERNAL_API_SECRET: replace-me
+      HOME_INTERNAL_API_MONITORED_SERVICES: glances,home-platform,docker
+      HOME_INTERNAL_API_MONITORED_CONTAINERS: news-aggregator,immich_server,immich_machine_learning,immich_postgres,immich_redis
+      HOME_INTERNAL_API_ROOT_DISK_PATH: /host
+      HOME_INTERNAL_API_DATA_DISK_PATH: /host/srv/home-data
+      HOME_INTERNAL_API_PROC_PATH: /host/proc
+      HOME_INTERNAL_API_SYS_PATH: /host/sys
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DBUS_SYSTEM_BUS_ADDRESS: unix:path=/host/run/dbus/system_bus_socket
+      HOME_INTERNAL_API_HOSTNAME: home-server
+    volumes:
+      - /:/host:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /run/dbus/system_bus_socket:/host/run/dbus/system_bus_socket
